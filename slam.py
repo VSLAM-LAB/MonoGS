@@ -1,7 +1,7 @@
 import os
 import sys
 import time
-from argparse import ArgumentParser
+import argparse
 from datetime import datetime
 
 import torch
@@ -15,7 +15,7 @@ from gaussian_splatting.utils.system_utils import mkdir_p
 from gui import gui_utils, slam_gui
 from utils.config_utils import load_config
 from utils.dataset import load_dataset
-from utils.eval_utils import eval_ate, eval_rendering, save_gaussians
+from utils.eval_utils import eval_ate, eval_rendering, save_gaussians, write_tum_trajectory
 from utils.logging_utils import Log
 from utils.multiprocessing_utils import FakeQueue
 from utils.slam_backend import BackEnd
@@ -118,6 +118,10 @@ class SLAM:
         Log("Total time", start.elapsed_time(end) * 0.001, tag="Eval")
         Log("Total FPS", N_frames / (start.elapsed_time(end) * 0.001), tag="Eval")
 
+        write_tum_trajectory(self.frontend.cameras, self.frontend.kf_indices,
+                             config["Results"]['save_dir'], config["Results"]['exp_id'],
+                             config["Dataset"]['dataset_path'])
+
         if self.eval_rendering:
             self.gaussians = self.frontend.gaussians
             kf_indices = self.frontend.kf_indices
@@ -199,60 +203,64 @@ class SLAM:
 
 
 if __name__ == "__main__":
-    # Set up command line argument parser
-    parser = ArgumentParser(description="Training script parameters")
-    parser.add_argument("--config", type=str)
-    parser.add_argument("--eval", action="store_true")
+    parser = argparse.ArgumentParser()
 
-    args = parser.parse_args(sys.argv[1:])
+    parser.add_argument("--sequence_path", type=str, help="path to image directory")
+    parser.add_argument("--calibration_yaml", type=str, help="path to calibration file")
+    parser.add_argument("--rgb_txt", type=str, help="path to image list")
+    parser.add_argument("--exp_folder", type=str, help="path to save results")
+    parser.add_argument("--exp_it", type=str, help="experiment iteration")
+    parser.add_argument("--settings_yaml", type=str, help="settings_yaml")
+    parser.add_argument("--verbose", type=str, help="verbose")
+    parser.add_argument("--config_yaml", type=str, help="config_yaml")
+
+    args, unknown = parser.parse_known_args()
+    sequence_path = args.sequence_path
+    exp_id = args.exp_it
+    exp_folder = args.exp_folder
+    config_yaml = args.config_yaml
+    verbose = bool(int(args.verbose))
 
     mp.set_start_method("spawn")
 
-    with open(args.config, "r") as yml:
-        config = yaml.safe_load(yml)
+    config = load_config(config_yaml)
+    config["Dataset"]["dataset_path"] = sequence_path
+    config["Results"]["save_dir"] = exp_folder
+    config["Results"]["exp_id"] = exp_id
 
-    config = load_config(args.config)
-    save_dir = None
+    calibration_yaml = os.path.join(sequence_path, "calibration.yaml")
+    with open(calibration_yaml, 'r') as file:
+        lines = file.readlines()
+    if lines and lines[0].strip() == '%YAML:1.0':
+        lines = lines[1:]
 
-    if args.eval:
-        Log("Running MonoGS in Evaluation Mode")
-        Log("Following config will be overriden")
-        Log("\tsave_results=True")
-        config["Results"]["save_results"] = True
-        Log("\tuse_gui=False")
-        config["Results"]["use_gui"] = False
-        Log("\teval_rendering=True")
-        config["Results"]["eval_rendering"] = True
-        Log("\tuse_wandb=True")
-        config["Results"]["use_wandb"] = True
+    calibration = yaml.safe_load(''.join(lines))
 
-    if config["Results"]["save_results"]:
-        mkdir_p(config["Results"]["save_dir"])
-        current_datetime = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        path = config["Dataset"]["dataset_path"].split("/")
-        save_dir = os.path.join(
-            config["Results"]["save_dir"], path[-3] + "_" + path[-2], current_datetime
-        )
-        tmp = args.config
-        tmp = tmp.split(".")[0]
-        config["Results"]["save_dir"] = save_dir
-        mkdir_p(save_dir)
-        with open(os.path.join(save_dir, "config.yml"), "w") as file:
-            documents = yaml.dump(config, file)
-        Log("saving results in " + save_dir)
-        run = wandb.init(
-            project="MonoGS",
-            name=f"{tmp}_{current_datetime}",
-            config=config,
-            mode=None if config["Results"]["use_wandb"] else "disabled",
-        )
-        wandb.define_metric("frame_idx")
-        wandb.define_metric("ate*", step_metric="frame_idx")
+    config["Dataset"]["Calibration"]["fx"] = calibration["Camera.fx"]
+    config["Dataset"]["Calibration"]["fy"] = calibration["Camera.fy"]
+    config["Dataset"]["Calibration"]["cx"] = calibration["Camera.cx"]
+    config["Dataset"]["Calibration"]["cy"] = calibration["Camera.cy"]
+    config["Dataset"]["Calibration"]["k1"] = calibration["Camera.k1"]
+    config["Dataset"]["Calibration"]["k2"] = calibration["Camera.k2"]
+    config["Dataset"]["Calibration"]["p1"] = calibration["Camera.p1"]
+    config["Dataset"]["Calibration"]["p2"] = calibration["Camera.p2"]
+    config["Dataset"]["Calibration"]["k3"] = calibration["Camera.k3"]
+    config["Dataset"]["Calibration"]["width"] = calibration["Camera.w"]
+    config["Dataset"]["Calibration"]["height"] = calibration["Camera.h"]
+    config["Dataset"]["Calibration"]["distorted"] = True
 
-    slam = SLAM(config, save_dir=save_dir)
+    if (calibration["Camera.k1"] == 0 and calibration["Camera.k2"] == 0 and calibration["Camera.k3"] == 0
+            and calibration["Camera.p1"] == 0 and calibration["Camera.p2"] == 0):
+        config["Dataset"]["Calibration"]["distorted"] = False
+
+    Log(f"\tuse_gui={verbose}")
+    config["Results"]["use_gui"] = verbose
+
+    slam = SLAM(config, save_dir=exp_folder)
 
     slam.run()
     wandb.finish()
 
     # All done
     Log("Done.")
+    sys.exit(0)
