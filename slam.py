@@ -204,7 +204,6 @@ class SLAM:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-
     parser.add_argument("--sequence_path", type=str, help="path to image directory")
     parser.add_argument("--calibration_yaml", type=str, help="path to calibration file")
     parser.add_argument("--rgb_txt", type=str, help="path to image list")
@@ -220,11 +219,13 @@ if __name__ == "__main__":
     exp_folder = args.exp_folder
     config_yaml = args.config_yaml
     verbose = bool(int(args.verbose))
+    rgb_txt = args.rgb_txt
 
     mp.set_start_method("spawn")
 
     config = load_config(config_yaml)
     config["Dataset"]["dataset_path"] = sequence_path
+    config["Dataset"]["rgb_txt"] = rgb_txt
     config["Results"]["save_dir"] = exp_folder
     config["Results"]["exp_id"] = exp_id
 
@@ -252,6 +253,9 @@ if __name__ == "__main__":
     if (calibration["Camera.k1"] == 0 and calibration["Camera.k2"] == 0 and calibration["Camera.k3"] == 0
             and calibration["Camera.p1"] == 0 and calibration["Camera.p2"] == 0):
         config["Dataset"]["Calibration"]["distorted"] = False
+
+    if calibration.get("depth_factor"):
+        config["Dataset"]["Calibration"]["depth_scale"] = calibration["depth_factor"]
 
     Log(f"\tuse_gui={verbose}")
     config["Results"]["use_gui"] = verbose

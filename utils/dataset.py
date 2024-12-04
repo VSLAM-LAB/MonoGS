@@ -15,24 +15,41 @@ try:
 except Exception:
     pass
 
-class VSLAMLABParser:
-    def __init__(self, input_folder):
+
+class VSLAMLABMONOParser:
+    def __init__(self, input_folder, rgb_txt):
         self.input_folder = input_folder
-        self.load_poses(self.input_folder)
+        self.load_poses(self.input_folder, rgb_txt)
         self.n_img = len(self.color_paths)
 
     def parse_list(self, filepath, skiprows=0):
         data = np.loadtxt(filepath, delimiter=" ", dtype=np.unicode_, skiprows=skiprows)
         return data
 
-    def load_poses(self, datapath):
-
-        rgb_txt = os.path.join(datapath, "rgb.txt")
+    def load_poses(self, datapath, rgb_txt):
         image_data = self.parse_list(rgb_txt)
-
         self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
         for i, data in enumerate(image_data):
             self.color_paths += [os.path.join(datapath, data[1])]
+
+
+class VSLAMLABRGBDParser:
+    def __init__(self, input_folder, rgb_txt):
+        self.input_folder = input_folder
+        self.load_poses(self.input_folder, rgb_txt)
+        self.n_img = len(self.color_paths)
+
+    def parse_list(self, filepath, skiprows=0):
+        data = np.loadtxt(filepath, delimiter=" ", dtype=np.unicode_, skiprows=skiprows)
+        return data
+
+    def load_poses(self, datapath, rgb_txt):
+        image_data = self.parse_list(rgb_txt)
+        self.color_paths, self.poses, self.depth_paths, self.frames = [], [], [], []
+        for i, data in enumerate(image_data):
+            self.color_paths += [os.path.join(datapath, data[1])]
+            self.depth_paths += [os.path.join(datapath, data[3])]
+
 
 class ReplicaParser:
     def __init__(self, input_folder):
@@ -86,7 +103,7 @@ class TUMParser:
                 k = np.argmin(np.abs(tstamp_pose - t))
 
                 if (np.abs(tstamp_depth[j] - t) < max_dt) and (
-                    np.abs(tstamp_pose[k] - t) < max_dt
+                        np.abs(tstamp_pose[k] - t) < max_dt
                 ):
                     associations.append((i, j, k))
 
@@ -191,8 +208,7 @@ class EuRoCParser:
             trans = data[pose_indices[i], 1:4]
             quat = data[pose_indices[i], 4:8]
             quat = quat[[1, 2, 3, 0]]
-            
-            
+
             T_w_i = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
             T_w_i[:3, 3] = trans
             T_w_c = np.dot(T_w_i, T_i_c0)
@@ -285,6 +301,8 @@ class MonocularDataset(BaseDataset):
         if self.has_depth:
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
+            if self.disorted:
+                depth = cv2.remap(depth, self.map1x, self.map1y, cv2.INTER_LINEAR)
 
         image = (
             torch.from_numpy(image / 255.0)
@@ -410,11 +428,13 @@ class StereoDataset(BaseDataset):
 
         return image, depth, pose
 
+
 class VSLAMLABDatasetMono(MonocularDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
-        parser = VSLAMLABParser(dataset_path)
+        rgb_txt = config["Dataset"]["rgb_txt"]
+        parser = VSLAMLABMONOParser(dataset_path, rgb_txt)
         self.num_imgs = parser.n_img
         self.color_paths = parser.color_paths
 
@@ -440,6 +460,41 @@ class VSLAMLABDatasetMono(MonocularDataset):
         )
 
         return image, depth, pose
+
+
+class VSLAMLABDatasetRGBD(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        rgb_txt = config["Dataset"]["rgb_txt"]
+        parser = VSLAMLABRGBDParser(dataset_path, rgb_txt)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.depth_paths = parser.depth_paths
+
+    def __getitem__(self, idx):
+        color_path = self.color_paths[idx]
+        pose = torch.eye(4, device=self.device, dtype=self.dtype)
+
+        image = np.array(Image.open(color_path))
+        depth = None
+
+        if self.disorted:
+            image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
+
+        if self.has_depth:
+            depth_path = self.depth_paths[idx]
+            depth = np.array(Image.open(depth_path)) / self.depth_scale
+
+        image = (
+            torch.from_numpy(image / 255.0)
+            .clamp(0.0, 1.0)
+            .permute(2, 0, 1)
+            .to(device=self.device, dtype=self.dtype)
+        )
+
+        return image, depth, pose
+
 
 class TUMDataset(MonocularDataset):
     def __init__(self, args, path, config):
@@ -479,11 +534,11 @@ class RealsenseDataset(BaseDataset):
         super().__init__(args, path, config)
         self.pipeline = rs.pipeline()
         self.h, self.w = 720, 1280
-        
+
         self.depth_scale = 0
         if self.config["Dataset"]["sensor_type"] == "depth":
-            self.has_depth = True 
-        else: 
+            self.has_depth = True
+        else:
             self.has_depth = False
 
         self.rs_config = rs.config()
@@ -506,7 +561,7 @@ class RealsenseDataset(BaseDataset):
             self.profile.get_stream(rs.stream.color)
         )
         self.rgb_intrinsics = self.rgb_profile.get_intrinsics()
-        
+
         self.fx = self.rgb_intrinsics.fx
         self.fy = self.rgb_intrinsics.fy
         self.cx = self.rgb_intrinsics.ppx
@@ -527,14 +582,11 @@ class RealsenseDataset(BaseDataset):
 
         if self.has_depth:
             self.depth_sensor = self.profile.get_device().first_depth_sensor()
-            self.depth_scale  = self.depth_sensor.get_depth_scale()
+            self.depth_scale = self.depth_sensor.get_depth_scale()
             self.depth_profile = rs.video_stream_profile(
                 self.profile.get_stream(rs.stream.depth)
             )
             self.depth_intrinsics = self.depth_profile.get_intrinsics()
-        
-        
-
 
     def __getitem__(self, idx):
         pose = torch.eye(4, device=self.device, dtype=self.dtype)
@@ -546,7 +598,7 @@ class RealsenseDataset(BaseDataset):
             aligned_frames = self.align.process(frameset)
             rgb_frame = aligned_frames.get_color_frame()
             aligned_depth_frame = aligned_frames.get_depth_frame()
-            depth = np.array(aligned_depth_frame.get_data())*self.depth_scale
+            depth = np.array(aligned_depth_frame.get_data()) * self.depth_scale
             depth[depth < 0] = 0
             np.nan_to_num(depth, nan=1000)
         else:
@@ -578,5 +630,7 @@ def load_dataset(args, path, config):
         return RealsenseDataset(args, path, config)
     elif config["Dataset"]["type"] == "vslamlab_mono":
         return VSLAMLABDatasetMono(args, path, config)
+    elif config["Dataset"]["type"] == "vslamlab_rgbd":
+        return VSLAMLABDatasetRGBD(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
