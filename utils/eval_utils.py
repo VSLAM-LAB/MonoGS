@@ -12,6 +12,7 @@ from evo.tools import plot
 from evo.tools.plot import PlotMode
 from evo.tools.settings import SETTINGS
 from matplotlib import pyplot as plt
+from scipy.spatial.transform import Rotation as Rot
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
 
 import wandb
@@ -34,7 +35,7 @@ def write_tum_trajectory(frames, kf_ids, exp_folder, exp_id, sequence_path):
     rgb_timestamps = []
     with open(rgb_txt, 'r') as file:
         for line in file:
-            timestamp, path = line.strip().split(' ')
+            timestamp, path, *extra = line.strip().split(' ')
             rgb_timestamps.append(float(timestamp))
 
     traj_txt = os.path.join(exp_folder, exp_id.zfill(5) + "_KeyFrameTrajectory.txt")
