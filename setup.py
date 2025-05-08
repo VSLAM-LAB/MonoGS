@@ -5,7 +5,7 @@ setup(
     version="1.0.0",
     description="MonoGS Visual SLAM system",
     packages=find_packages(),
-    py_modules=["slam"], 
+    py_modules=["vslamlab_monogs_mono"], 
     install_requires=[
         "numpy",
         "torch",
