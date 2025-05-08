@@ -4,8 +4,6 @@ setup(
     name="monogs",
     version="1.0.0",
     description="MonoGS Visual SLAM system",
-    author="Your Name",
-    license="MIT",
     packages=find_packages(),
     py_modules=["slam"], 
     install_requires=[
@@ -14,7 +12,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "monogs = slam:main",
+            "vslamlab_monogs_mono = vslamlab_monogs_mono:main",
         ],
     },
     include_package_data=True,

@@ -210,19 +210,19 @@ def main():
     parser.add_argument("--exp_it", type=str, help="experiment iteration")
     parser.add_argument("--settings_yaml", type=str, help="settings_yaml")
     parser.add_argument("--verbose", type=str, help="verbose")
-    parser.add_argument("--config_yaml", type=str, help="config_yaml")
 
     args, unknown = parser.parse_known_args()
     sequence_path = args.sequence_path
     exp_id = args.exp_it
     exp_folder = args.exp_folder
-    config_yaml = args.config_yaml
+    config_yaml = args.settings_yaml
     verbose = bool(int(args.verbose))
     rgb_txt = args.rgb_txt
 
     mp.set_start_method("spawn")
 
     config = load_config(config_yaml)
+    print(f"Loading config from {config_yaml}")
     config["Dataset"]["dataset_path"] = sequence_path
     config["Dataset"]["rgb_txt"] = rgb_txt
     config["Results"]["save_dir"] = exp_folder
