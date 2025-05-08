@@ -14,3 +14,7 @@ datasets
 wandb
 
 result*
+
+install_monogs.txt
+install_monogs-dev.txt
+

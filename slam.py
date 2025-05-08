@@ -201,8 +201,7 @@ class SLAM:
     def run(self):
         pass
 
-
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--sequence_path", type=str, help="path to image directory")
     parser.add_argument("--calibration_yaml", type=str, help="path to calibration file")
@@ -268,3 +267,6 @@ if __name__ == "__main__":
     # All done
     Log("Done.")
     sys.exit(0)
+
+if __name__ == "__main__":
+    main()
