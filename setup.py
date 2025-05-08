@@ -19,5 +19,4 @@ setup(
             "vslamlab_monogs_mono = vslamlab_monogs_mono:main",
         ],
     },
-    include_package_data=True,
 )
