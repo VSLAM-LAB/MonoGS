@@ -10,6 +10,10 @@ setup(
         "numpy",
         "torch",
     ],
+    include_package_data=True,
+    package_data={
+        'gui.gl_render': ['shaders/*.glsl'],
+    },
     entry_points={
         "console_scripts": [
             "vslamlab_monogs_mono = vslamlab_monogs_mono:main",
